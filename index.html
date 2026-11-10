@@ -119,6 +119,9 @@ input[type=file]{font-size:13px;width:100%}
 .seg{display:grid;grid-template-columns:1fr 1fr;background:var(--chip);border-radius:12px;padding:3px}
 .seg button{border:0;background:none;border-radius:10px;padding:9px;font-weight:700;color:var(--mut)}
 .seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;border-radius:6px;padding:1px 6px;margin-left:6px;background:var(--chip);color:var(--mut)}
+.tag.atraso{background:var(--neg-bg);color:var(--neg)}
+.pbtn.pg{background:var(--pos-bg);color:var(--pos)}
 .cod{display:grid;gap:6px}
 .cod .linha{display:flex;gap:8px}
 .cod input{flex:1;min-width:0}
@@ -294,21 +297,28 @@ function calc(m){
   const pago={};
   ls.forEach(l=>{if(l.recId&&ativos.some(r=>r.id===l.recId))pago[l.recId]=l;});
   const pend=ativos.filter(r=>!pago[r.id]);
-  const ent=soma(ls.filter(l=>l.tipo==='entrada')),desp=soma(ls.filter(l=>l.tipo==='despesa'));
-  const pendEnt=soma(pend.filter(r=>r.tipo==='entrada')),pendDesp=soma(pend.filter(r=>r.tipo==='despesa'));
-  const avulsos=ls.filter(l=>!(l.recId&&pago[l.recId]===l)).sort((a,b)=>b.data.localeCompare(a.data));
-  return {ls,ativos,pago,ent,desp,pendEnt,pendDesp,avulsos,previsao:ent+pendEnt-desp-pendDesp};
+  const feitos=ls.filter(l=>!l.aberto);
+  const hojeM=mesDe(new Date());
+  const abertos=lancs.filter(l=>l.aberto&&(l.mes===m||(m===hojeM&&l.mes<m))).sort((a,b)=>a.data.localeCompare(b.data));
+  const ent=soma(feitos.filter(l=>l.tipo==='entrada')),desp=soma(feitos.filter(l=>l.tipo==='despesa'));
+  const pendEnt=soma(pend.filter(r=>r.tipo==='entrada')),pendFix=soma(pend.filter(r=>r.tipo==='despesa')),totAbertos=soma(abertos);
+  const pendDesp=pendFix+totAbertos;
+  const avulsos=feitos.filter(l=>!(l.recId&&pago[l.recId]===l)).sort((a,b)=>b.data.localeCompare(a.data));
+  return {ls,ativos,pago,ent,desp,pendEnt,pendDesp,pendFix,abertos,totAbertos,avulsos,previsao:ent+pendEnt-desp-pendDesp};
 }
 
 /* ---------- telas ---------- */
 function linhaLanc(l){
-  const e=l.tipo==='entrada';
+  const e=l.tipo==='entrada',ab=!!l.aberto,atraso=ab&&l.data<hojeISO();
+  const sub=ab?(atraso?'venceu em ':'vence em ')+dataBR(l.data)+(l.categoria?' · '+esc(l.categoria):'')+`<span class="tag ${atraso?'atraso':''}">${atraso?'atrasado':'a pagar'}</span>`
+    :dataBR(l.data)+(l.categoria?' · '+esc(l.categoria):'')+(l.recId?' · fixo':'');
   return `<div class="row"><div class="rmain" data-act="editLanc" data-id="${esc(l.id)}">
     <div class="rt">${esc(l.descricao)}</div>
-    <div class="rs">${dataBR(l.data)}${l.categoria?' · '+esc(l.categoria):''}${l.recId?' · fixo':''}</div></div>
+    <div class="rs">${sub}</div></div>
+    ${ab?`<button class="pbtn pg" data-act="marcarPago" data-id="${esc(l.id)}">paguei</button>`:''}
     ${l.codigo?`<button class="pbtn" data-act="copiarCod" data-id="${esc(l.id)}">código</button>`:''}
     ${l.printId?`<button class="pbtn" data-act="verPrint" data-id="${esc(l.id)}">print</button>`:''}
-    <div class="rv ${e?'pos':'neg'}">${e?'+':'−'} ${fmt(l.valor)}</div></div>`;
+    <div class="rv ${ab?(atraso?'neg':'pend'):(e?'pos':'neg')}">${e?'+':'−'} ${fmt(l.valor)}</div></div>`;
 }
 function viewMes(){
   const c=calc(mes),atual=mesDe(new Date());
@@ -332,7 +342,7 @@ function viewMes(){
     <div class="hstats">
       <div><small>Entradas</small><b>${fmt(c.ent+c.pendEnt)}</b><i>recebido ${fmt(c.ent)}</i></div>
       <div><small>Já pago</small><b>${fmt(c.desp)}</b><i>no mês</i></div>
-      <div><small>A pagar</small><b>${fmt(c.pendDesp)}</b><i>fixas pendentes</i></div>
+      <div><small>A pagar</small><b>${fmt(c.pendDesp)}</b><i>fixas e boletos</i></div>
     </div>
   </div>
   <div class="card">
@@ -345,6 +355,8 @@ function viewMes(){
   <div class="sec"><h2>Fixos do mês</h2><span>${total?nPago+' de '+total+' marcados':''}</span></div>
   ${total?`<div class="list">${fixos}</div><div class="prog"><i style="width:${Math.round(nPago/total*100)}%"></i></div>`
     :`<div class="list"><div class="empty">Cadastre salários e despesas fixas na aba Fixos para ver a previsão do mês.</div></div>`}
+  ${c.abertos.length?`<div class="sec"><h2>Boletos a pagar</h2><span>${c.abertos.length} · ${fmt(c.totAbertos)}</span></div>
+  <div class="list">${c.abertos.map(linhaLanc).join('')}</div>`:''}
   <div class="sec"><h2>Outros lançamentos</h2><span>${c.avulsos.length?c.avulsos.length+' no mês':''}</span></div>
   <div class="list">${c.avulsos.map(linhaLanc).join('')||'<div class="empty">Nada lançado além dos fixos. Use o botão + para lançar.</div>'}</div>`;
 }
@@ -382,11 +394,11 @@ function viewFixos(){
 }
 function viewRel(){
   const meses=[];for(let i=repN-1;i>=0;i--)meses.push(addMes(mes,-i));
-  const ls=lancs.filter(l=>meses.includes(l.mes));
+  const ls=lancs.filter(l=>meses.includes(l.mes)&&!l.aberto);
   const dl=ls.filter(l=>l.tipo==='despesa');
   const ent=soma(ls.filter(l=>l.tipo==='entrada')),desp=soma(dl);
   const cm=[];const nc=Math.max(repN,6);for(let i=nc-1;i>=0;i--)cm.push(addMes(mes,-i));
-  const serie=cm.map(m=>{const x=lancs.filter(l=>l.mes===m);return {m,e:soma(x.filter(l=>l.tipo==='entrada')),d:soma(x.filter(l=>l.tipo==='despesa'))};});
+  const serie=cm.map(m=>{const x=lancs.filter(l=>l.mes===m&&!l.aberto);return {m,e:soma(x.filter(l=>l.tipo==='entrada')),d:soma(x.filter(l=>l.tipo==='despesa'))};});
   const max=Math.max(1,...serie.map(s=>Math.max(s.e,s.d)));
   const cats={};dl.forEach(l=>{const k=l.categoria||'Sem categoria';cats[k]=(cats[k]||0)+Number(l.valor||0);});
   const catL=Object.entries(cats).sort((a,b)=>b[1]-a[1]);
@@ -478,6 +490,7 @@ function sheetLanc(o){
       <label class="f">Data<input type="date" name="data" value="${esc(o.data||hojeISO())}" required></label>
       <label class="f" id="catBox" ${e?'hidden':''}>Categoria<select name="cat">${catOptions(o.categoria||'Outros')}</select></label>
     </div>
+    ${o.recId?'':`<label class="ck" id="abBox" ${e?'hidden':''}><input type="checkbox" name="aberto" ${o.aberto?'checked':''}> <span>Ainda não paguei (boleto ou conta a pagar)</span></label>`}
     <div class="cod" id="codBox" ${e?'hidden':''}><label class="f" for="codIn">Código do boleto (opcional)</label>
       <div class="linha"><input type="text" id="codIn" name="codigo" inputmode="numeric" autocomplete="off" placeholder="Linha digitável" value="${esc(o.codigo?formatarCodigo(o.codigo):'')}"><button type="button" class="pbtn" data-act="copiarCodigo">Copiar</button></div>
       <div class="info" id="codInfo"></div></div>
@@ -548,6 +561,7 @@ async function salvarLanc(f){
   let recId=ctx.recId||(old&&old.recId)||null;
   let printId=(old&&old.printId)||null,printTipo=(old&&old.printTipo)||null;
   const categoria=tipo==='despesa'?f.elements.cat.value:'';
+  const querAberto=tipo==='despesa'&&!recId&&!!(f.elements.aberto&&f.elements.aberto.checked);
   const codigo=tipo==='despesa'?String(f.elements.codigo.value).replace(/\D/g,'')||null:null;
   btn.disabled=true;btn.textContent='Salvando…';
   try{
@@ -556,11 +570,12 @@ async function salvarLanc(f){
       try{const data=await comprimir(file);const pid=uid();await comTimeout(fs.collection('prints').doc(pid).set({data}),20000);printId=pid;printTipo='image/jpeg';}
       catch(e){toast('Não consegui anexar o print. O lançamento foi salvo sem ele.');}
     }
+    const aberto=querAberto&&!file;
     if(f.elements.fixa&&f.elements.fixa.checked&&!recId){
       recId=uid();
       await store.save('rec',{id:recId,tipo,nome:desc,valor,dia:Number(data.slice(8,10)),categoria,inicio:data.slice(0,7),fim:null});
     }
-    await store.save('lanc',{id,tipo,data,mes:data.slice(0,7),descricao:desc,valor,categoria,recId,printId,printTipo,codigo});
+    await store.save('lanc',{id,tipo,data,mes:data.slice(0,7),descricao:desc,valor,categoria,recId,printId,printTipo,codigo,aberto});
     mes=data.slice(0,7);fecharSheet();trocar();
   }catch(e){btn.disabled=false;btn.textContent='Salvar';toast('Não consegui salvar. Tente de novo.');}
 }
@@ -673,7 +688,8 @@ async function lerComIA(file){
     const d=/^\d{4}-\d{2}-\d{2}$/.test(r.data||'')?r.data:null;if(d)el.data.value=d;
     if(sheetCtx&&!sheetCtx.recId&&(r.tipo==='entrada'||r.tipo==='despesa')&&r.tipo!==sheetCtx.tipo){const b=f.querySelector(`[data-act=segTipo][data-tipo=${r.tipo}]`);if(b)b.click();}
     if(el.cat&&CATS.includes(r.categoria))el.cat.value=r.categoria;
-    if(!pdf&&el.print){try{const dt=new DataTransfer();dt.items.add(file);el.print.files=dt.files;}catch(e){}}
+    if(!pdf&&el.print&&!(el.aberto&&el.aberto.checked)){try{const dt=new DataTransfer();dt.items.add(file);el.print.files=dt.files;}catch(e){}}
+    if(el.aberto)el.aberto.checked=(r.tipo!=='entrada')&&(r.situacao?r.situacao==='aberto':!!(bol&&bol.ok));
     if(cod&&el.codigo){el.codigo.value=formatarCodigo(cod);atualizarCodInfo();}
     toast(!cod?'Conferi os campos. Revise e toque em Salvar.':(bol&&bol.ok?'Boleto lido e código conferido. Revise e toque em Salvar.':'Li o boleto, mas o código não passou na conferência. Compare antes de pagar.'));
   }catch(e){
@@ -697,7 +713,7 @@ document.addEventListener('click',async ev=>{
   else if(act==='segTipo'){
     sheetCtx.tipo=el.dataset.tipo;const e=sheetCtx.tipo==='entrada';
     el.parentNode.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b===el));
-    $('#catBox').hidden=e;$('#codBox').hidden=e;const ft=$('#fixaTxt');if(ft)ft.textContent=e?'Repete todo mês (salário ou entrada fixa)':'Repete todo mês (despesa fixa)';
+    $('#catBox').hidden=e;$('#codBox').hidden=e;if($('#abBox'))$('#abBox').hidden=e;const ft=$('#fixaTxt');if(ft)ft.textContent=e?'Repete todo mês (salário ou entrada fixa)':'Repete todo mês (despesa fixa)';
   }
   else if(act==='editLanc'){const l=lancs.find(x=>x.id===id);if(l)sheetLanc(Object.assign({},l,{recId:null,id:l.id}));}
   else if(act==='pagar'){
@@ -708,6 +724,7 @@ document.addEventListener('click',async ev=>{
   else if(act==='copiarCodigo'){const d=(($('#codIn')||{}).value||'').replace(/\D/g,'');if(!d)return toast('Ainda não tem código aqui.');toast(await copiarTexto(d)?'Código copiado. Cole no app do banco.':'Não consegui copiar. Selecione o código e copie.');}
   else if(act==='copiarCod'){const l=lancs.find(x=>x.id===id);if(l&&l.codigo)toast(await copiarTexto(String(l.codigo).replace(/\D/g,''))?'Código copiado. Cole no app do banco.':'Não consegui copiar o código.');}
   else if(act==='chaveIA')sheetChave();
+  else if(act==='marcarPago'){const l=lancs.find(x=>x.id===id);if(l){const h=hojeISO(),pg=l.data<h?{data:h,mes:h.slice(0,7)}:{};await store.save('lanc',Object.assign({},l,pg,{aberto:false}));trocar();toast('Marcado como pago.');}}
   else if(act==='verPrint'){const l=lancs.find(x=>x.id===id);if(l&&l.printId)sheetPrint(l);}
   else if(act==='novoRec')sheetRec({tipo:el.dataset.tipo});
   else if(act==='editRec'){const r=recs.find(x=>x.id===id);if(r)sheetRec(r);}
@@ -754,11 +771,12 @@ Devolva:
 - valor: o valor total a pagar ou pago, em reais, como número (ex.: 187.43). Ignore consumo, leituras e valores parciais.
 - data: se for comprovante de pagamento, a data em que foi pago; se for conta ou boleto, a data de vencimento. Formato AAAA-MM-DD.
 - tipo: "despesa", ou "entrada" se for dinheiro recebido (salário, Pix recebido).
+- situacao: "pago" se for comprovante de pagamento, recibo ou Pix já feito; "aberto" se for boleto, fatura ou conta que ainda precisa ser paga.
 - categoria: a que melhor encaixa.
 - codigo: se for boleto ou conta com linha digitável, copie a linha digitável inteira, só os números, exatamente como está impressa, sem inventar nem completar dígitos (47 dígitos em boleto bancário, 48 em conta de água, luz, gás, telefone ou imposto). Se não houver linha digitável legível, deixe vazio.`;
   const corpo={contents:[{parts:[{text:prompt},{inline_data:{mime_type:mime,data:dataUrl.split(',')[1]}}]}],
     generationConfig:{responseMimeType:'application/json',responseSchema:{type:'OBJECT',properties:{
-      descricao:{type:'STRING'},valor:{type:'NUMBER'},data:{type:'STRING'},tipo:{type:'STRING',enum:['despesa','entrada']},categoria:{type:'STRING',enum:cats},codigo:{type:'STRING'}}}}};
+      descricao:{type:'STRING'},valor:{type:'NUMBER'},data:{type:'STRING'},tipo:{type:'STRING',enum:['despesa','entrada']},situacao:{type:'STRING',enum:['pago','aberto']},categoria:{type:'STRING',enum:cats},codigo:{type:'STRING'}}}}};
   let ultimo;
   for(const m of (window.MODELO_OK?[window.MODELO_OK].concat(MODELOS.filter(x=>x!==window.MODELO_OK)):MODELOS)){
     try{
