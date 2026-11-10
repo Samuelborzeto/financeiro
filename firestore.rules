@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function permitido() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in [
+          'marilia.cabral55@gmail.com',
+          'brunaborzetobb@gmail.com'
+        ];
+    }
+    match /{document=**} {
+      allow read, write: if permitido();
+    }
+  }
+}
