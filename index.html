@@ -119,6 +119,8 @@ input[type=file]{font-size:13px;width:100%}
 .seg{display:grid;grid-template-columns:1fr 1fr;background:var(--chip);border-radius:12px;padding:3px}
 .seg button{border:0;background:none;border-radius:10px;padding:9px;font-weight:700;color:var(--mut)}
 .seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+.ia{border:1.5px dashed var(--pos);background:var(--pos-bg);color:var(--pos);border-radius:14px;padding:13px;font-weight:700;text-align:center;display:block;cursor:pointer}
+.ia.lendo{opacity:.6;pointer-events:none}
 .ck{display:flex;gap:9px;align-items:center;font-size:14px;font-weight:600}
 .ck input{width:20px;height:20px}
 
@@ -457,6 +459,7 @@ function sheetLanc(o){
   abrirSheet(`
   <h2>${esc(o.titulo||(edit?'Editar lançamento':'Novo lançamento'))}<button data-act="fechar" aria-label="Fechar">&times;</button></h2>
   <form class="form" id="fLanc">
+    ${edit?'':`<label class="ia" id="iaBtn">📄 Ler conta ou comprovante com IA<input type="file" id="iaFile" accept="image/*,application/pdf" hidden></label>`}
     ${o.recId?'':`<div class="seg"><button type="button" data-act="segTipo" data-tipo="despesa" class="${e?'':'on'}">Despesa</button><button type="button" data-act="segTipo" data-tipo="entrada" class="${e?'on':''}">Entrada</button></div>`}
     <label class="f">Valor (R$)<input type="text" name="valor" inputmode="decimal" placeholder="0,00" value="${o.valor?esc(Number(o.valor).toFixed(2).replace('.',',')):''}" required></label>
     <label class="f">Descrição<input type="text" name="desc" placeholder="${e?'Ex: Salário, extra':'Ex: Escola, mercado'}" value="${esc(o.descricao||'')}" required></label>
@@ -558,6 +561,32 @@ async function importar(file){
   }catch(e){toast('Não consegui ler esse arquivo de backup.');}
 }
 
+/* ---------- leitura com IA ---------- */
+function arquivoBase64(file){return new Promise((ok,err)=>{const r=new FileReader();r.onload=()=>ok(String(r.result));r.onerror=err;r.readAsDataURL(file);});}
+async function lerComIA(file){
+  const btn=$('#iaBtn'),f=$('#fLanc');if(!btn||!f)return;
+  if(!window.lerContaIA){toast('A leitura com IA ainda está carregando. Tente de novo em instantes.');return;}
+  const txt=btn.firstChild.textContent;btn.classList.add('lendo');btn.firstChild.textContent='Lendo o arquivo…';
+  try{
+    const pdf=file.type==='application/pdf';
+    let dataUrl;
+    if(pdf){if(file.size>15e6)throw new Error('grande');dataUrl=await arquivoBase64(file);}
+    else dataUrl=await comprimir(file);
+    const r=await window.lerContaIA(dataUrl,pdf?'application/pdf':'image/jpeg',CATS);
+    if(!r||!(Number(r.valor)>0)){toast('Não achei o valor nesse arquivo. Preencha à mão.');return;}
+    const el=f.elements;
+    el.valor.value=Number(r.valor).toFixed(2).replace('.',',');
+    if(r.descricao)el.desc.value=String(r.descricao).slice(0,60);
+    const d=/^\d{4}-\d{2}-\d{2}$/.test(r.data||'')?r.data:null;if(d)el.data.value=d;
+    if(sheetCtx&&!sheetCtx.recId&&(r.tipo==='entrada'||r.tipo==='despesa')&&r.tipo!==sheetCtx.tipo){const b=f.querySelector(`[data-act=segTipo][data-tipo=${r.tipo}]`);if(b)b.click();}
+    if(el.cat&&CATS.includes(r.categoria))el.cat.value=r.categoria;
+    if(!pdf&&el.print){try{const dt=new DataTransfer();dt.items.add(file);el.print.files=dt.files;}catch(e){}}
+    toast('Conferi os campos. Revise e toque em Salvar.');
+  }catch(e){
+    toast(e&&e.message==='grande'?'Arquivo grande demais. Mande uma foto ou print.':'Não consegui ler esse arquivo. Tente uma foto mais nítida.');
+  }finally{btn.classList.remove('lendo');btn.firstChild.textContent=txt;}
+}
+
 /* ---------- eventos ---------- */
 let confirmar=null;
 document.addEventListener('click',async ev=>{
@@ -607,11 +636,38 @@ document.addEventListener('input',ev=>{
   else if(t.id==='bAte'){busca.ate=t.value;updBusca();}
 });
 document.addEventListener('change',ev=>{
+  if(ev.target.id==='iaFile'&&ev.target.files[0]){lerComIA(ev.target.files[0]);ev.target.value='';return;}
   if(ev.target.id==='fImport'&&ev.target.files[0]){importar(ev.target.files[0]);ev.target.value='';}
 });
 
 iniciar();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+<script type="module">
+import {initializeApp,getApps} from 'https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js';
+import {getAI,getGenerativeModel,GoogleAIBackend,Schema} from 'https://www.gstatic.com/firebasejs/12.6.0/firebase-ai.js';
+const app=getApps().find(a=>a.name==='ia')||initializeApp(window.FIREBASE_CONFIG,'ia');
+const ai=getAI(app,{backend:new GoogleAIBackend()});
+const MODELOS=['gemini-2.5-flash','gemini-flash-latest','gemini-3-flash-preview','gemini-2.5-flash-lite'];
+window.lerContaIA=async(dataUrl,mime,cats)=>{
+  const cfg={responseMimeType:'application/json',responseSchema:Schema.object({properties:{
+    descricao:Schema.string(),valor:Schema.number(),data:Schema.string(),tipo:Schema.enumString({enum:['despesa','entrada']}),categoria:Schema.enumString({enum:cats})}})};
+  const hoje=new Date().toISOString().slice(0,10);
+  const prompt=`Você lê contas, boletos, faturas e comprovantes de pagamento brasileiros para um app de finanças da casa. Hoje é ${hoje}.
+Devolva:
+- descricao: nome curto de quem recebe ou do serviço, como "Conta de água Sabesp", "Escola", "Licenciamento". Até 40 caracteres.
+- valor: o valor total a pagar ou pago, em reais, como número (ex.: 187.43). Ignore consumo, leituras e valores parciais.
+- data: se for comprovante de pagamento, a data em que foi pago; se for conta ou boleto, a data de vencimento. Formato AAAA-MM-DD.
+- tipo: "despesa", ou "entrada" se for dinheiro recebido (salário, Pix recebido).
+- categoria: a que melhor encaixa.`;
+  const partes=[prompt,{inlineData:{mimeType:mime,data:dataUrl.split(',')[1]}}];
+  let ultimoErro;
+  for(const m of (window.MODELO_OK?[window.MODELO_OK]:MODELOS)){
+    try{const r=await getGenerativeModel(ai,{model:m,generationConfig:cfg}).generateContent(partes);window.MODELO_OK=m;return JSON.parse(r.response.text());}
+    catch(e){ultimoErro=e;if(!/404|not found for API|is not found|not supported/i.test(String(e&&e.message)))throw e;}
+  }
+  throw ultimoErro;
+};
 </script>
 </body>
 </html>
