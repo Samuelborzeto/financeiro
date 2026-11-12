@@ -417,6 +417,11 @@ function viewRel(){
   const max=Math.max(1,...serie.map(s=>Math.max(s.e,s.d)));
   const cats={};dl.forEach(l=>{const k=l.categoria||'Sem categoria';cats[k]=(cats[k]||0)+Number(l.valor||0);});
   const catL=Object.entries(cats).sort((a,b)=>b[1]-a[1]);
+  const notas=dl.filter(l=>l.itens&&l.itens.length),its=[].concat(...notas.map(l=>l.itens)),itTot=soma(its);
+  const grp={};its.forEach(i=>{grp[i.grupo]=(grp[i.grupo]||0)+Number(i.valor||0);});
+  const grpL=Object.entries(grp).sort((a,b)=>b[1]-a[1]);
+  const porItem={};notas.forEach(l=>l.itens.forEach(i=>{const k=semAcento(i.nome).replace(/\s+/g,' ').trim();const o=porItem[k]=porItem[k]||{nome:i.nome,v:0,n:new Set()};o.v+=Number(i.valor||0);o.n.add(l.id);}));
+  const itemL=Object.values(porItem).sort((a,b)=>b.v-a.v).slice(0,10);
   const fix=soma(dl.filter(l=>l.recId)),vari=desp-fix;
   const top=dl.slice().sort((a,b)=>b.valor-a.valor).slice(0,5);
   const per=repN===1?mesNome(mes):mesNome(meses[0],true)+'/'+meses[0].slice(2,4)+' a '+mesNome(mes,true)+'/'+mes.slice(2,4);
@@ -438,6 +443,13 @@ function viewRel(){
   <div class="card"><h3>Despesas por categoria</h3>
     ${catL.map(([k,v])=>`<div class="hb"><div class="top"><span>${esc(k)}</span><span>${fmt(v)} · ${Math.round(v/desp*100)}%</span></div><div class="tr"><i style="width:${v/catL[0][1]*100}%"></i></div></div>`).join('')||'<div class="empty">Sem despesas no período.</div>'}
   </div>
+  ${notas.length?`<div class="card"><h3>Compras com nota, por grupo</h3>
+    <p class="muted" style="margin:-4px 0 10px">${notas.length} ${notas.length===1?'nota lida':'notas lidas'} · itens somam ${fmt(itTot)}</p>
+    ${grpL.map(([k,v])=>`<div class="hb"><div class="top"><span>${esc(k)}</span><span>${fmt(v)} · ${Math.round(v/itTot*100)}%</span></div><div class="tr"><i style="width:${v/grpL[0][1]*100}%"></i></div></div>`).join('')}
+  </div>
+  <div class="card"><h3>Itens que mais pesaram</h3>
+    ${itemL.map(o=>`<div class="it"><span>${esc(o.nome)}${o.n.size>1?` <small>em ${o.n.size} compras</small>`:''}</span><b>${fmt(o.v)}</b></div>`).join('')}
+  </div>`:''}
   <div class="card"><h3>Fixas e variáveis</h3>
     ${desp?`<div class="split"><div class="a" style="width:${fix/desp*100}%"></div><div class="b" style="width:${vari/desp*100}%"></div></div>
     <div class="duo"><div class="stat"><small>Fixas</small><b>${fmt(fix)}</b></div><div class="stat"><small>Variáveis</small><b>${fmt(vari)}</b></div></div>`:'<div class="empty">Sem despesas no período.</div>'}
