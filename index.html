@@ -119,6 +119,18 @@ input[type=file]{font-size:13px;width:100%}
 .seg{display:grid;grid-template-columns:1fr 1fr;background:var(--chip);border-radius:12px;padding:3px}
 .seg button{border:0;background:none;border-radius:10px;padding:9px;font-weight:700;color:var(--mut)}
 .seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+.it{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:13.5px}
+.it:first-child{border-top:0}
+.it small{color:var(--mut)}
+.it b{white-space:nowrap;font-weight:700}
+.gh{display:flex;justify-content:space-between;font-size:12px;font-weight:800;color:var(--mut);text-transform:uppercase;letter-spacing:.03em;margin:14px 0 2px}
+.itrow{display:grid;grid-template-columns:1fr 84px 30px;gap:6px;margin-bottom:6px}
+.itrow select{grid-column:1/3}
+.itrow button{grid-row:1/3;grid-column:3;border:0;border-radius:10px;background:var(--neg-bg);color:var(--neg);font-weight:800}
+.itbox{border:1px solid var(--line);border-radius:14px;padding:10px 12px}
+.itbox summary{font-weight:700;font-size:13px;cursor:pointer}
+.itbox .info{font-size:12px;font-weight:600;margin-top:4px}
+.itbox .info.ok{color:var(--pos)} .itbox .info.aviso{color:var(--neg)}
 .tag{display:inline-block;font-size:10.5px;font-weight:800;border-radius:6px;padding:1px 6px;margin-left:6px;background:var(--chip);color:var(--mut)}
 .tag.atraso{background:var(--neg-bg);color:var(--neg)}
 .pbtn.pg{background:var(--pos-bg);color:var(--pos)}
@@ -190,6 +202,7 @@ input[type=file]{font-size:13px;width:100%}
 <div id="toast"></div>
 
 <script>
+const GRUPOS=['Hortifruti','Carnes e peixes','Laticínios e frios','Padaria','Mercearia','Bebidas','Limpeza','Higiene','Pet','Outros'];
 const CATS=['Moradia','Financiamento','Escola','Carro','Mercado','Contas da casa','Saúde','Transporte','Lazer','Impostos','Outros'];
 const $=s=>document.querySelector(s);
 const pad=n=>String(n).padStart(2,'0');
@@ -201,6 +214,7 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const soma=ls=>ls.reduce((a,l)=>a+Number(l.valor||0),0);
 const dataBR=iso=>iso.split('-').reverse().join('/');
+const semAcento=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 function parseValor(s){s=String(s).trim().replace(/[R$\s]/g,'');if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');return Number(s);}
 function addMes(m,n){const [y,mo]=m.split('-').map(Number);return mesDe(new Date(y,mo-1+n,1));}
 function mesNome(m,curto){const [y,mo]=m.split('-').map(Number);const d=new Date(y,mo-1,1);
@@ -308,13 +322,14 @@ function calc(m){
 }
 
 /* ---------- telas ---------- */
-function linhaLanc(l){
+function linhaLanc(l,extra){
   const e=l.tipo==='entrada',ab=!!l.aberto,atraso=ab&&l.data<hojeISO();
   const sub=ab?(atraso?'venceu em ':'vence em ')+dataBR(l.data)+(l.categoria?' · '+esc(l.categoria):'')+`<span class="tag ${atraso?'atraso':''}">${atraso?'atrasado':'a pagar'}</span>`
     :dataBR(l.data)+(l.categoria?' · '+esc(l.categoria):'')+(l.recId?' · fixo':'');
   return `<div class="row"><div class="rmain" data-act="editLanc" data-id="${esc(l.id)}">
     <div class="rt">${esc(l.descricao)}</div>
-    <div class="rs">${sub}</div></div>
+    <div class="rs">${sub}</div>${extra||''}</div>
+    ${l.itens&&l.itens.length?`<button class="pbtn" data-act="verItens" data-id="${esc(l.id)}">${l.itens.length} itens</button>`:''}
     ${ab?`<button class="pbtn pg" data-act="marcarPago" data-id="${esc(l.id)}">paguei</button>`:''}
     ${l.codigo?`<button class="pbtn" data-act="copiarCod" data-id="${esc(l.id)}">código</button>`:''}
     ${l.printId?`<button class="pbtn" data-act="verPrint" data-id="${esc(l.id)}">print</button>`:''}
@@ -433,7 +448,7 @@ function viewRel(){
 function viewBusca(){
   return `
   <div class="card form">
-    <input type="text" id="bT" placeholder="Buscar na descrição, ex: carro" value="${esc(busca.t)}">
+    <input type="text" id="bT" placeholder="Buscar na descrição ou item, ex: leite" value="${esc(busca.t)}">
     <div class="duo">
       <label class="f">Categoria<select id="bCat"><option value="">Todas</option>${CATS.map(c=>`<option ${busca.cat===c?'selected':''}>${esc(c)}</option>`).join('')}</select></label>
       <label class="f">Tipo<select id="bTipo">${[['todos','Todos'],['despesa','Despesas'],['entrada','Entradas']].map(([v,t])=>`<option value="${v}" ${busca.tipo===v?'selected':''}>${t}</option>`).join('')}</select></label>
@@ -449,12 +464,14 @@ function viewBusca(){
 function updBusca(){
   const el=$('#bLista');if(!el)return;
   const t=busca.t.trim().toLowerCase();
-  const r=lancs.filter(l=>(!t||String(l.descricao).toLowerCase().includes(t))&&(!busca.cat||l.categoria===busca.cat)
+  const achados=l=>t&&l.itens?l.itens.filter(i=>semAcento(i.nome).includes(semAcento(t))):[];
+  const r=lancs.filter(l=>(!t||String(l.descricao).toLowerCase().includes(t)||achados(l).length)&&(!busca.cat||l.categoria===busca.cat)
     &&(!busca.de||l.mes>=busca.de)&&(!busca.ate||l.mes<=busca.ate)&&(busca.tipo==='todos'||l.tipo===busca.tipo))
     .sort((a,b)=>b.data.localeCompare(a.data));
   const e=soma(r.filter(l=>l.tipo==='entrada')),d=soma(r.filter(l=>l.tipo==='despesa'));
-  $('#bTot').textContent=r.length?(d?'despesas '+fmt(d):'')+(d&&e?' · ':'')+(e?'entradas '+fmt(e):''):'';
-  el.innerHTML=r.slice(0,300).map(linhaLanc).join('')||'<div class="empty">Nada encontrado.</div>';
+  const itTot=r.reduce((a,l)=>a+soma(achados(l)),0),soItens=r.length&&r.every(l=>achados(l).length&&!String(l.descricao).toLowerCase().includes(t));
+  $('#bTot').textContent=r.length?(soItens?'itens encontrados '+fmt(itTot):(d?'despesas '+fmt(d):'')+(d&&e?' · ':'')+(e?'entradas '+fmt(e):'')):'';
+  el.innerHTML=r.slice(0,300).map(l=>linhaLanc(l,achados(l).slice(0,6).map(i=>`<div class="rs">↳ ${esc(i.nome)}${i.qtd&&i.qtd!==1?' ('+esc(String(i.qtd).replace('.',','))+')':''} · ${fmt(i.valor)}</div>`).join(''))).join('')||'<div class="empty">Nada encontrado.</div>';
 }
 function render(){
   $('#mesTitulo').textContent=mesNome(mes);
@@ -482,7 +499,7 @@ function sheetLanc(o){
   abrirSheet(`
   <h2>${esc(o.titulo||(edit?'Editar lançamento':'Novo lançamento'))}<button data-act="fechar" aria-label="Fechar">&times;</button></h2>
   <form class="form" id="fLanc">
-    ${edit?'':`<label class="ia" id="iaBtn">📄 Ler conta ou comprovante com IA<input type="file" id="iaFile" accept="image/*,application/pdf" hidden></label>`}
+    ${edit?'':`<label class="ia" id="iaBtn">📄 Ler conta, boleto ou nota com IA<input type="file" id="iaFile" accept="image/*,application/pdf" multiple hidden></label>`}
     ${o.recId?'':`<div class="seg"><button type="button" data-act="segTipo" data-tipo="despesa" class="${e?'':'on'}">Despesa</button><button type="button" data-act="segTipo" data-tipo="entrada" class="${e?'on':''}">Entrada</button></div>`}
     <label class="f">Valor (R$)<input type="text" name="valor" inputmode="decimal" placeholder="0,00" value="${o.valor?esc(Number(o.valor).toFixed(2).replace('.',',')):''}" required></label>
     <label class="f">Descrição<input type="text" name="desc" placeholder="${e?'Ex: Salário, extra':'Ex: Escola, mercado'}" value="${esc(o.descricao||'')}" required></label>
@@ -491,6 +508,7 @@ function sheetLanc(o){
       <label class="f" id="catBox" ${e?'hidden':''}>Categoria<select name="cat">${catOptions(o.categoria||'Outros')}</select></label>
     </div>
     ${o.recId?'':`<label class="ck" id="abBox" ${e?'hidden':''}><input type="checkbox" name="aberto" ${o.aberto?'checked':''}> <span>Ainda não paguei (boleto ou conta a pagar)</span></label>`}
+    <div id="itensBox">${old&&old.itens&&old.itens.length?`<button type="button" class="btn soft" data-act="verItens" data-id="${esc(o.id)}">Ver os ${old.itens.length} itens da nota</button>`:''}</div>
     <div class="cod" id="codBox" ${e?'hidden':''}><label class="f" for="codIn">Código do boleto (opcional)</label>
       <div class="linha"><input type="text" id="codIn" name="codigo" inputmode="numeric" autocomplete="off" placeholder="Linha digitável" value="${esc(o.codigo?formatarCodigo(o.codigo):'')}"><button type="button" class="pbtn" data-act="copiarCodigo">Copiar</button></div>
       <div class="info" id="codInfo"></div></div>
@@ -575,7 +593,7 @@ async function salvarLanc(f){
       recId=uid();
       await store.save('rec',{id:recId,tipo,nome:desc,valor,dia:Number(data.slice(8,10)),categoria,inicio:data.slice(0,7),fim:null});
     }
-    await store.save('lanc',{id,tipo,data,mes:data.slice(0,7),descricao:desc,valor,categoria,recId,printId,printTipo,codigo,aberto});
+    await store.save('lanc',{id,tipo,data,mes:data.slice(0,7),descricao:desc,valor,categoria,recId,printId,printTipo,codigo,aberto,itens:tipo==='despesa'?(ctx.itens||(old&&old.itens)||null):null});
     mes=data.slice(0,7);fecharSheet();trocar();
   }catch(e){btn.disabled=false;btn.textContent='Salvar';toast('Não consegui salvar. Tente de novo.');}
 }
@@ -666,18 +684,72 @@ async function copiarTexto(txt){
   }
 }
 
+/* ---------- itens da nota ---------- */
+function limparItens(arr){
+  return (Array.isArray(arr)?arr:[]).map(i=>({nome:String(i&&i.nome||'').trim().slice(0,60),qtd:Number(i&&i.qtd)>0?Math.round(Number(i.qtd)*1000)/1000:null,
+    valor:Math.round(Number(i&&i.valor||0)*100)/100,grupo:GRUPOS.includes(i&&i.grupo)?i.grupo:'Outros'})).filter(i=>i.nome&&i.valor>0).slice(0,300);
+}
+function confereItens(itens,total){
+  const sm=Math.round(soma(itens)*100)/100,dif=Math.round((Number(total||0)-sm)*100)/100;
+  return Math.abs(dif)<=0.05?{ok:true,txt:'✓ A soma dos itens bate com o total ('+fmt(sm)+').'}
+    :{ok:false,txt:'⚠ Os itens somam '+fmt(sm)+' e o total é '+fmt(total)+' (diferença de '+fmt(Math.abs(dif))+'). Pode ser desconto ou item que não foi lido.'};
+}
+function itensAgrupados(itens){
+  const g={};itens.forEach(i=>{(g[i.grupo]=g[i.grupo]||[]).push(i);});
+  return Object.entries(g).sort((a,b)=>soma(b[1])-soma(a[1])).map(([nome,ls])=>`<div class="gh"><span>${esc(nome)}</span><span>${fmt(soma(ls))}</span></div>`+
+    ls.map(i=>`<div class="it"><span>${esc(i.nome)}${i.qtd&&i.qtd!==1?` <small>× ${esc(String(i.qtd).replace('.',','))}</small>`:''}</span><b>${fmt(i.valor)}</b></div>`).join('')).join('');
+}
+function sheetItens(l){
+  const its=l.itens||[],c=confereItens(its,l.valor);
+  abrirSheet(`
+  <h2>${esc(l.descricao)}<button data-act="fechar" aria-label="Fechar">&times;</button></h2>
+  <p class="muted" style="margin-top:-6px">${dataBR(l.data)} · ${fmt(l.valor)} · ${its.length} itens</p>
+  <div class="itbox"><div class="info ${c.ok?'ok':'aviso'}" style="margin:0">${esc(c.txt)}</div></div>
+  ${itensAgrupados(its)}
+  <button class="btn soft" style="margin-top:14px" data-act="editItens" data-id="${esc(l.id)}">Editar itens</button>`);
+}
+function linhaItemEdit(i){
+  return `<div class="itrow" data-qtd="${esc(i.qtd||'')}"><input type="text" name="inome" placeholder="Item" value="${esc(i.nome||'')}"><input type="text" name="ivalor" inputmode="decimal" placeholder="0,00" value="${i.valor?esc(Number(i.valor).toFixed(2).replace('.',',')):''}">
+    <button type="button" data-act="delItem" aria-label="Remover item">&times;</button>
+    <select name="igrupo">${GRUPOS.map(g=>`<option ${(i.grupo||'Outros')===g?'selected':''}>${esc(g)}</option>`).join('')}</select></div>`;
+}
+function sheetItensEdit(l){
+  abrirSheet(`
+  <h2>Itens · ${esc(l.descricao)}<button data-act="fechar" aria-label="Fechar">&times;</button></h2>
+  <form class="form" id="fItens">
+    <div id="itLista">${(l.itens||[]).map(linhaItemEdit).join('')}</div>
+    <button class="btn soft" type="button" data-act="addItem">+ Item</button>
+    <button class="btn" type="submit">Salvar itens</button>
+  </form>`,{id:l.id,qtds:(l.itens||[]).map(i=>i.qtd)});
+}
+async function salvarItens(f){
+  const l=lancs.find(x=>x.id===sheetCtx.id);if(!l)return fecharSheet();
+  const itens=limparItens([...f.querySelectorAll('.itrow')].map(r=>({nome:r.querySelector('[name=inome]').value,valor:parseValor(r.querySelector('[name=ivalor]').value||'0'),grupo:r.querySelector('[name=igrupo]').value,qtd:Number(r.dataset.qtd)||null})));
+  try{const novo=Object.assign({},l,{itens:itens.length?itens:null});await store.save('lanc',novo);trocar();if(itens.length)sheetItens(novo);else fecharSheet();toast('Itens salvos.');}
+  catch(e){toast('Não consegui salvar os itens.');}
+}
+function mostrarItensLidos(itens,total){
+  const box=$('#itensBox');if(!box)return;
+  if(!itens.length){box.innerHTML='';return;}
+  const c=confereItens(itens,total);
+  box.innerHTML=`<details class="itbox"><summary>${itens.length} itens lidos da nota</summary>${itensAgrupados(itens)}</details><div class="itbox" style="margin-top:6px"><div class="info ${c.ok?'ok':'aviso'}" style="margin:0">${esc(c.txt)}</div></div>`;
+}
+
 /* ---------- leitura com IA ---------- */
 function arquivoBase64(file){return new Promise((ok,err)=>{const r=new FileReader();r.onload=()=>ok(String(r.result));r.onerror=err;r.readAsDataURL(file);});}
-async function lerComIA(file){
+async function lerComIA(files){
+  files=[...files].slice(0,4);const file=files[0];
   const btn=$('#iaBtn'),f=$('#fLanc');if(!btn||!f)return;
   if(!window.GEMINI_KEY){toast('Falta cadastrar a chave da IA. Vá em Fixos e toque em Chave da IA.');return;}
-  const txt=btn.firstChild.textContent;btn.classList.add('lendo');btn.firstChild.textContent='Lendo o arquivo…';
+  const txt=btn.firstChild.textContent;btn.classList.add('lendo');btn.firstChild.textContent=files.length>1?'Lendo '+files.length+' arquivos…':'Lendo o arquivo…';
   try{
     const pdf=file.type==='application/pdf';
-    let dataUrl;
-    if(pdf){if(file.size>15e6)throw new Error('grande');dataUrl=await arquivoBase64(file);}
-    else dataUrl=await comprimir(file);
-    const r=await window.lerContaIA(dataUrl,pdf?'application/pdf':'image/jpeg',CATS);
+    const arqs=[];
+    for(const a of files){
+      if(a.type==='application/pdf'){if(a.size>15e6)throw new Error('grande');arqs.push({dataUrl:await arquivoBase64(a),mime:'application/pdf'});}
+      else arqs.push({dataUrl:await comprimir(a),mime:'image/jpeg'});
+    }
+    const r=await window.lerContaIA(arqs,CATS,GRUPOS);
     const cod=String(r&&r.codigo||'').replace(/\D/g,'');
     const bol=cod?lerBoleto(cod):null;
     if(r&&bol&&bol.ok){if(bol.valor>0)r.valor=bol.valor;if(bol.venc)r.data=bol.venc;r.tipo='despesa';}
@@ -691,7 +763,8 @@ async function lerComIA(file){
     if(!pdf&&el.print&&!(el.aberto&&el.aberto.checked)){try{const dt=new DataTransfer();dt.items.add(file);el.print.files=dt.files;}catch(e){}}
     if(el.aberto)el.aberto.checked=(r.tipo!=='entrada')&&(r.situacao?r.situacao==='aberto':!!(bol&&bol.ok));
     if(cod&&el.codigo){el.codigo.value=formatarCodigo(cod);atualizarCodInfo();}
-    toast(!cod?'Conferi os campos. Revise e toque em Salvar.':(bol&&bol.ok?'Boleto lido e código conferido. Revise e toque em Salvar.':'Li o boleto, mas o código não passou na conferência. Compare antes de pagar.'));
+    const itens=limparItens(r.itens);if(sheetCtx)sheetCtx.itens=itens.length?itens:null;mostrarItensLidos(itens,r.valor);
+    toast(itens.length?(confereItens(itens,r.valor).ok?'Nota lida com '+itens.length+' itens. Revise e toque em Salvar.':'Li '+itens.length+' itens, mas a soma não bate com o total. Confira antes de salvar.'):!cod?'Conferi os campos. Revise e toque em Salvar.':(bol&&bol.ok?'Boleto lido e código conferido. Revise e toque em Salvar.':'Li o boleto, mas o código não passou na conferência. Compare antes de pagar.'));
   }catch(e){
     toast(e&&e.message==='grande'?'Arquivo grande demais. Mande uma foto ou print.':'Não consegui ler esse arquivo. Tente uma foto mais nítida.');
   }finally{btn.classList.remove('lendo');btn.firstChild.textContent=txt;}
@@ -724,6 +797,10 @@ document.addEventListener('click',async ev=>{
   else if(act==='copiarCodigo'){const d=(($('#codIn')||{}).value||'').replace(/\D/g,'');if(!d)return toast('Ainda não tem código aqui.');toast(await copiarTexto(d)?'Código copiado. Cole no app do banco.':'Não consegui copiar. Selecione o código e copie.');}
   else if(act==='copiarCod'){const l=lancs.find(x=>x.id===id);if(l&&l.codigo)toast(await copiarTexto(String(l.codigo).replace(/\D/g,''))?'Código copiado. Cole no app do banco.':'Não consegui copiar o código.');}
   else if(act==='chaveIA')sheetChave();
+  else if(act==='verItens'){const l=lancs.find(x=>x.id===id);if(l&&l.itens)sheetItens(l);}
+  else if(act==='editItens'){const l=lancs.find(x=>x.id===id);if(l)sheetItensEdit(l);}
+  else if(act==='addItem'){$('#itLista').insertAdjacentHTML('beforeend',linhaItemEdit({}));const n=$('#itLista').lastElementChild.querySelector('input');if(n)n.focus();}
+  else if(act==='delItem'){el.closest('.itrow').remove();}
   else if(act==='marcarPago'){const l=lancs.find(x=>x.id===id);if(l){const h=hojeISO(),pg=l.data<h?{data:h,mes:h.slice(0,7)}:{};await store.save('lanc',Object.assign({},l,pg,{aberto:false}));trocar();toast('Marcado como pago.');}}
   else if(act==='verPrint'){const l=lancs.find(x=>x.id===id);if(l&&l.printId)sheetPrint(l);}
   else if(act==='novoRec')sheetRec({tipo:el.dataset.tipo});
@@ -740,6 +817,7 @@ document.addEventListener('submit',ev=>{
   if(ev.target.id==='fLanc')salvarLanc(ev.target);
   if(ev.target.id==='fRec')salvarRec(ev.target);
   if(ev.target.id==='fChave')salvarChave(ev.target);
+  if(ev.target.id==='fItens')salvarItens(ev.target);
 });
 document.addEventListener('input',ev=>{
   const t=ev.target;
@@ -752,7 +830,7 @@ document.addEventListener('input',ev=>{
   else if(t.id==='bAte'){busca.ate=t.value;updBusca();}
 });
 document.addEventListener('change',ev=>{
-  if(ev.target.id==='iaFile'&&ev.target.files[0]){lerComIA(ev.target.files[0]);ev.target.value='';return;}
+  if(ev.target.id==='iaFile'&&ev.target.files[0]){lerComIA(ev.target.files);ev.target.value='';return;}
   if(ev.target.id==='fImport'&&ev.target.files[0]){importar(ev.target.files[0]);ev.target.value='';}
 });
 
@@ -762,7 +840,7 @@ if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(
 <script>
 /* A chave do Gemini vem de window.GEMINI_KEY (definida fora deste arquivo). */
 const MODELOS=['gemini-3.5-flash','gemini-3-flash-preview','gemini-3.1-flash-lite','gemini-3.8-flash'];
-window.lerContaIA=async(dataUrl,mime,cats)=>{
+window.lerContaIA=async(arqs,cats,grupos)=>{
   if(!window.GEMINI_KEY)throw new Error('sem chave');
   const hoje=new Date().toISOString().slice(0,10);
   const prompt=`Você lê contas, boletos, faturas e comprovantes de pagamento brasileiros para um app de finanças da casa. Hoje é ${hoje}.
@@ -773,10 +851,12 @@ Devolva:
 - tipo: "despesa", ou "entrada" se for dinheiro recebido (salário, Pix recebido).
 - situacao: "pago" se for comprovante de pagamento, recibo ou Pix já feito; "aberto" se for boleto, fatura ou conta que ainda precisa ser paga.
 - categoria: a que melhor encaixa.
-- codigo: se for boleto ou conta com linha digitável, copie a linha digitável inteira, só os números, exatamente como está impressa, sem inventar nem completar dígitos (47 dígitos em boleto bancário, 48 em conta de água, luz, gás, telefone ou imposto). Se não houver linha digitável legível, deixe vazio.`;
-  const corpo={contents:[{parts:[{text:prompt},{inline_data:{mime_type:mime,data:dataUrl.split(',')[1]}}]}],
+- codigo: se for boleto ou conta com linha digitável, copie a linha digitável inteira, só os números, exatamente como está impressa, sem inventar nem completar dígitos (47 dígitos em boleto bancário, 48 em conta de água, luz, gás, telefone ou imposto). Se não houver linha digitável legível, deixe vazio.
+- itens: só quando for nota ou cupom fiscal de compra com produtos listados (mercado, farmácia, padaria, loja). Liste todos os produtos, um por linha da nota, sem pular nenhum e sem inventar. Para cada um: nome (escreva por extenso o que der para entender da abreviação, ex.: "LEITE UHT INT 1L" vira "Leite integral 1L"), qtd (quantidade ou peso em kg, como número), valor (valor total daquele item em reais, já multiplicado pela quantidade e com o desconto do próprio item) e grupo. Não inclua como item: descontos gerais, troco, formas de pagamento, impostos nem o total. Se houver mais de uma imagem, elas são partes da mesma nota: junte os itens sem repetir os que aparecem nas duas. Nesse caso use a categoria "Mercado" quando for supermercado, e descricao com o nome do estabelecimento. Em contas, boletos e comprovantes sem lista de produtos, devolva itens vazio.`;
+  const corpo={contents:[{parts:[{text:prompt}].concat(arqs.map(a=>({inline_data:{mime_type:a.mime,data:a.dataUrl.split(',')[1]}})))}],
     generationConfig:{responseMimeType:'application/json',responseSchema:{type:'OBJECT',properties:{
-      descricao:{type:'STRING'},valor:{type:'NUMBER'},data:{type:'STRING'},tipo:{type:'STRING',enum:['despesa','entrada']},situacao:{type:'STRING',enum:['pago','aberto']},categoria:{type:'STRING',enum:cats},codigo:{type:'STRING'}}}}};
+      descricao:{type:'STRING'},valor:{type:'NUMBER'},data:{type:'STRING'},tipo:{type:'STRING',enum:['despesa','entrada']},situacao:{type:'STRING',enum:['pago','aberto']},categoria:{type:'STRING',enum:cats},codigo:{type:'STRING'},
+      itens:{type:'ARRAY',items:{type:'OBJECT',properties:{nome:{type:'STRING'},qtd:{type:'NUMBER'},valor:{type:'NUMBER'},grupo:{type:'STRING',enum:grupos}},required:['nome','valor','grupo']}}}}}};
   let ultimo;
   for(const m of (window.MODELO_OK?[window.MODELO_OK].concat(MODELOS.filter(x=>x!==window.MODELO_OK)):MODELOS)){
     try{
