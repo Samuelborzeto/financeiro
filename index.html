@@ -43,12 +43,20 @@ header{position:sticky;top:0;z-index:5;background:var(--bg);padding:12px 0 8px}
 .hero .lb{font-size:12.5px;color:var(--hero-mut);font-weight:600}
 .hero .big{font-size:34px;font-weight:800;letter-spacing:-.03em;margin:4px 0 14px;font-variant-numeric:tabular-nums}
 .hero .big.pos{color:var(--hero-pos)} .hero .big.neg{color:var(--hero-neg)}
-.hstats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.hstats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.hstats{gap:6px}
+.hstats div,.hstats button{padding:9px 8px!important;display:block;align-self:stretch}
+.hstats button{display:flex!important;flex-direction:column;align-items:flex-start;justify-content:flex-start}
+.hstats b{display:block;font-size:12.5px!important;letter-spacing:-.01em}
 .hstats div,.hstats button{background:rgba(255,255,255,.07);border-radius:14px;padding:9px 10px}
 .hstats button{border:0;text-align:left;color:inherit;font:inherit;cursor:pointer}
 .hstats button small:after{content:' ›';opacity:.7}
 .hero .big{cursor:pointer}
-.pbtn.tx{padding:5px 8px;flex:none}
+.pbtn.tx{padding:6px 12px;flex:none;font-size:12px}
+.row{flex-wrap:wrap;row-gap:8px}
+.acts .pbtn.ib{padding:6px 10px;font-size:12px;gap:5px}
+.acts{flex-basis:100%;display:flex;flex-wrap:wrap;gap:8px;margin-left:44px}
+.row.fx .acts{margin-left:38px}
 .hstats small{display:block;font-size:11px;color:var(--hero-mut);font-weight:600}
 .hstats b{font-size:13.5px;font-variant-numeric:tabular-nums}
 .hstats i{display:block;font-style:normal;font-size:10.5px;color:var(--hero-mut);margin-top:1px}
@@ -234,7 +242,7 @@ input[type=file]{font-size:13px;width:100%}
 <button id="upd" data-act="atualizar" hidden>Atualização disponível · toque para recarregar</button>
 
 <script>
-const VERSAO='6';
+const VERSAO='7';
 const CAT_ICO={'Moradia':'🏠','Financiamento':'🏦','Escola':'🎒','Carro':'🚗','Mercado':'🛒','Contas da casa':'💡','Saúde':'🩺','Transporte':'🚌','Lazer':'🎉','Impostos':'🧾','Outros':'📦'};
 const SVG={cod:'<path d="M4 6v12M8 6v12M11 6v12M15 6v12M18 6v12M21 6v12"/>',img:'<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M21 16l-5-5-8 8"/>',lista:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>'};
 const GRUPOS=['Hortifruti','Carnes e peixes','Laticínios e frios','Padaria','Mercearia','Bebidas','Limpeza','Higiene','Pet','Outros'];
@@ -249,8 +257,10 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const soma=ls=>ls.reduce((a,l)=>a+Number(l.valor||0),0);
 const dataBR=iso=>iso.split('-').reverse().join('/');
+const dataCurta=iso=>iso.slice(0,4)===String(new Date().getFullYear())?dataBR(iso).slice(0,5):dataBR(iso);
 const semAcento=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 const ibtn=(act,id,ic,rotulo,txt)=>`<button class="pbtn ib" data-act="${act}" data-id="${esc(id)}" aria-label="${esc(rotulo)}" title="${esc(rotulo)}"><svg viewBox="0 0 24 24">${SVG[ic]}</svg>${txt==null?'':esc(txt)}</button>`;
+const acoes=h=>h?`<div class="acts">${h}</div>`:'';
 const icoDe=l=>l.tipo==='entrada'?'💰':(CAT_ICO[l.categoria]||'📦');
 function quem(){const u=auth&&auth.currentUser;if(!u)return null;return String(u.displayName||u.email||'').trim().split(/[\s@]/)[0].slice(0,20)||null;}
 function addDias(iso,n){const [y,m,d]=iso.split('-').map(Number);const x=new Date(y,m-1,d+n);return mesDe(x)+'-'+pad(x.getDate());}
@@ -373,32 +383,30 @@ function calc(m){
 /* ---------- telas ---------- */
 function linhaLanc(l,extra){
   const e=l.tipo==='entrada',ab=!!l.aberto,atraso=ab&&l.data<hojeISO();
-  const sub=ab?(atraso?'venceu em ':'vence em ')+dataBR(l.data)+(l.categoria?' · '+esc(l.categoria):'')+`<span class="tag ${atraso?'atraso':''}">${atraso?'atrasado':'a pagar'}</span>`
-    :dataBR(l.data)+(l.categoria?' · '+esc(l.categoria):'')+(l.recId?' · fixo':'')+(l.por?' · '+esc(l.por):'');
+  const sub=ab?(atraso?'venceu ':'vence ')+dataCurta(l.data)+(l.categoria?' · '+esc(l.categoria):'')+`<span class="tag ${atraso?'atraso':''}">${atraso?'atrasado':'a pagar'}</span>`
+    :dataCurta(l.data)+(l.categoria?' · '+esc(l.categoria):'')+(l.recId?' · fixo':'')+(l.por?' · '+esc(l.por):'');
   return `<div class="row"><div class="ico" aria-hidden="true">${icoDe(l)}</div><div class="rmain" data-act="editLanc" data-id="${esc(l.id)}">
     <div class="rt">${esc(l.descricao)}</div>
     <div class="rs">${sub}</div>${extra||''}</div>
-    ${l.itens&&l.itens.length?ibtn('verItens',l.id,'lista','Ver os '+l.itens.length+' itens da nota',l.itens.length):''}
-    ${ab?`<button class="pbtn pg" data-act="marcarPago" data-id="${esc(l.id)}">paguei</button>`:''}
-    ${l.codigo?ibtn('copiarCod',l.id,'cod','Copiar código do boleto'):''}
-    ${l.printId?ibtn('verPrint',l.id,'img','Ver print do pagamento'):''}
-    <div class="rv ${ab?(atraso?'neg':'pend'):(e?'pos':'neg')}">${e?'+':'−'} ${fmt(l.valor)}</div></div>`;
+    <div class="rv ${ab?(atraso?'neg':'pend'):(e?'pos':'neg')}">${e?'+':'−'} ${fmt(l.valor)}</div>${acoes(
+    (ab?`<button class="pbtn pg tx" data-act="marcarPago" data-id="${esc(l.id)}">já paguei</button>`:'')+
+    (l.codigo?ibtn('copiarCod',l.id,'cod','Copiar código do boleto','código'):'')+
+    (l.printId?ibtn('verPrint',l.id,'img','Ver print do pagamento','print'):'')+
+    (l.itens&&l.itens.length?ibtn('verItens',l.id,'lista','Ver os '+l.itens.length+' itens da nota',l.itens.length+(l.itens.length===1?' item':' itens')):''))}</div>`;
 }
 function linhaFixo(r,l){
   const e=r.tipo==='entrada';
-  const sub=l?(e?'recebido em ':'pago em ')+dataBR(l.data):'dia '+r.dia+(e?' · a receber':' · a pagar');
-  if(l)return `<div class="row">
+  const sub=l?(e?'recebido ':'pago ')+dataCurta(l.data):'dia '+r.dia+(e?' · a receber':' · a pagar');
+  if(l)return `<div class="row fx">
       <button class="chk on" data-act="editLanc" data-id="${esc(l.id)}" aria-label="Ver lançamento">✓</button>
       <div class="rmain" data-act="editLanc" data-id="${esc(l.id)}"><div class="rt">${esc(r.nome)}</div><div class="rs">${sub}${r.categoria?' · '+esc(r.categoria):''}</div></div>
-      ${l.codigo?ibtn('copiarCod',l.id,'cod','Copiar código do boleto'):''}
-      ${l.printId?ibtn('verPrint',l.id,'img','Ver print do pagamento'):''}
-      <div class="rv ${e?'pos':'neg'}">${e?'+':'−'} ${fmt(l.valor)}</div></div>`;
-  return `<div class="row">
+      <div class="rv ${e?'pos':'neg'}">${e?'+':'−'} ${fmt(l.valor)}</div>${acoes(
+      (l.codigo?ibtn('copiarCod',l.id,'cod','Copiar código do boleto','código'):'')+(l.printId?ibtn('verPrint',l.id,'img','Ver print do pagamento','print'):''))}</div>`;
+  return `<div class="row fx">
       <button class="chk" data-act="jaPaguei" data-id="${esc(r.id)}" aria-label="${e?'Marcar como recebido':'Marcar como pago'}">✓</button>
       <div class="rmain" data-act="pagar" data-id="${esc(r.id)}"><div class="rt">${esc(r.nome)}</div><div class="rs">${sub}${r.categoria?' · '+esc(r.categoria):''}</div></div>
-      ${e?'':`<button class="pbtn tx" data-act="pagar" data-id="${esc(r.id)}">pagar</button>`}
-      <button class="pbtn pg tx" data-act="jaPaguei" data-id="${esc(r.id)}">${e?'recebi':'já paguei'}</button>
-      <div class="rv pend">${e?'+':'−'} ${fmt(r.valor)}</div></div>`;
+      <div class="rv pend">${e?'+':'−'} ${fmt(r.valor)}</div>${acoes(
+      `<button class="pbtn pg tx" data-act="jaPaguei" data-id="${esc(r.id)}">${e?'recebi':'já paguei'}</button>`+(e?'':`<button class="pbtn tx" data-act="pagar" data-id="${esc(r.id)}">pagar</button>`))}</div>`;
 }
 async function jaPaguei(id){
   const r=recs.find(x=>x.id===id);if(!r)return;
